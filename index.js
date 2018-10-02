@@ -45,7 +45,7 @@ async function runScraper(url, numImages) {
     await driver.get(url);
 
     let numPhotos = 0;
-    var bar = new ProgressBar('loading photos [:bar] :percent :etas', { total: numImages, width: 50 });
+    var bar = new ProgressBar('loading photos [:bar] :percent :elapsed', { total: numImages, width: 50 });
 
     let photos;
     while(numPhotos < numImages) {
@@ -54,7 +54,7 @@ async function runScraper(url, numImages) {
       photos = await driver.findElements(By.className('CoverImage low undefined loaded'));
 
       if (photos.length === numPhotos) {
-        await driver.executeScript('window.scrollTo(100000, 0);');
+        await driver.executeScript('window.scrollBy(0,-1000);');
         await driver.sleep(1000)
       }
 
@@ -88,7 +88,7 @@ async function runScraper(url, numImages) {
 }
 
 function getImageData(urls) {
-  var bar = new ProgressBar('downloading photos [:bar] :percent :etas', { total: urls.length, width: 50 });
+  var bar = new ProgressBar('downloading photos [:bar] :percent :elapsed', { total: urls.length, width: 50 });
 
   return Promise.map(urls, url => {
     return request({
@@ -105,7 +105,7 @@ function getImageData(urls) {
 }
 
 function uploadToS3(imgDatas) {
-  var bar = new ProgressBar(`uploading ${imgDatas.length} photos to AWS S3... [:bar] :percent :etas`, { total: imgDatas.length, width: 50 });
+  var bar = new ProgressBar(`uploading ${imgDatas.length} photos to AWS S3... [:bar] :percent :elapsed`, { total: imgDatas.length, width: 50 });
 
   return Promise.map(imgDatas, (imgData, i, length) => {
     return s3.putObject({
