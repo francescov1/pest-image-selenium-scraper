@@ -1,10 +1,11 @@
 'use strict';
 require('dotenv').config();
 global.Promise = require('bluebird');
-
+const prompt = require('prompt');
 const request = require('request-promise');
 const AWS = require('aws-sdk');
 const { Builder, By, Key, until, Button } = require('selenium-webdriver');
+const chrome = require('selenium-webdriver/chrome');
 const config = require('./config');
 const ProgressBar = require('progress');
 
@@ -25,22 +26,35 @@ const s3 = new AWS.S3({ apiVersion: config.aws.version })
 - ground beetles (Carabidae): https://www.inaturalist.org/taxa/49567-Carabidae/browse_photos
 */
 
-async function runScraper() {
-  let driver = await new Builder().forBrowser('chrome').build();
+async function runScraper(url, numImages) {
+  if (!url)
+    url = 'https://www.inaturalist.org/taxa/49567-Carabidae/browse_photos'
+
+  console.log(`scraping ${url} for images...`)
+  const screen = {
+    width: 640,
+    height: 480
+  };
+
+  let driver = await new Builder()
+    .forBrowser('chrome')
+    .setChromeOptions(new chrome.Options().headless().windowSize(screen))
+    .build();
+
   try {
-    await driver.get('https://www.inaturalist.org/taxa/49567-Carabidae/browse_photos');
-    await driver.sleep(3000)
+    await driver.get(url);
 
     let numPhotos = 0;
-    var bar = new ProgressBar('loading photos [:bar] :percent :etas', { total: 100, width: 50 });
+    var bar = new ProgressBar('loading photos [:bar] :percent :etas', { total: numImages, width: 50 });
 
-    while(numPhotos < 100) {
-      await driver.executeScript('window.scrollTo(0,10000);');
+    let photos;
+    while(numPhotos < numImages) {
+      await driver.executeScript('window.scrollTo(0,100000);');
       await driver.sleep(3000)
-      const photos = await driver.wait(until.elementsLocated(By.className('CoverImage low undefined loaded')), 5 * 1000);
+      photos = await driver.findElements(By.className('CoverImage low undefined loaded'));
 
       if (photos.length === numPhotos) {
-        await driver.executeScript('window.scrollTo(10000, 0);');
+        await driver.executeScript('window.scrollTo(100000, 0);');
         await driver.sleep(1000)
       }
 
@@ -48,8 +62,7 @@ async function runScraper() {
       bar.tick(numPhotos - bar.curr)
     }
 
-    console.log('image loading complete')
-    const photos = await driver.wait(until.elementsLocated(By.className('CoverImage low undefined loaded')), 5 * 1000)
+    console.log(`image loading complete - ${photos.length} photos`)
 
     let urls = [];
     for (let i=0; i < photos.length; i++) {
@@ -61,17 +74,16 @@ async function runScraper() {
     // download image
     const imgDatas = await getImageData(urls);
     console.log('photos downloaded successfully')
-    console.log(`uploading ${imgDatas.length} photos to AWS S3...`);
 
     // send to s3
     await uploadToS3(imgDatas);
-    console.log('success!');
+    console.log('💦💦💦 Success 👉👌 💦💦💦');
   }
   catch(err) {
     console.error(err)
   }
   finally {
-  //  await driver.quit();
+    await driver.quit();
   }
 }
 
@@ -93,21 +105,24 @@ function getImageData(urls) {
 }
 
 function uploadToS3(imgDatas) {
-  var bar = new ProgressBar('uploading photos to AWS S3 [:bar] :percent :etas', { total: urls.length, width: 50 });
+  var bar = new ProgressBar(`uploading ${imgDatas.length} photos to AWS S3... [:bar] :percent :etas`, { total: imgDatas.length, width: 50 });
 
   return Promise.map(imgDatas, (imgData, i, length) => {
     return s3.putObject({
       Bucket: config.aws.s3_bucket_name,
-      Key: `infield/carabidae/${randomstring.generate(5)}.jpg`,
+      Key: `carabidae/${randomstring.generate(5)}.jpg`,
       Body: imgData
     }).promise()
     .then(result => {
       bar.tick()
-      return results;
+      return result;
     })
     .catch(err => console.error(err));
   });
 
 }
 
-runScraper();
+prompt.start();
+prompt.get(['url', 'numImages'], function (err, result) {
+  runScraper(result.url, Number(result.numImages))
+});
