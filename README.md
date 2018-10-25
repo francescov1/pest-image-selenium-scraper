@@ -1,4 +1,6 @@
-## iNaturalist Image Scraper
+## Pest Image Scraper
+
+Scrapes images of pets from the iNaturalist website.
 
 ### To use:
 * clone repo
