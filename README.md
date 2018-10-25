@@ -7,4 +7,3 @@
 * `npm install`
 * `node index.js`
 * follow the prompts, entering in the desired pest name and location
-*
