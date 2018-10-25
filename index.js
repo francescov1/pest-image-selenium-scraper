@@ -105,7 +105,7 @@ async function runScraper(bugName, location, numImages) {
 
     // send to s3
     await uploadToS3(imgDatas, bugNameFound, locationNameFound);
-    console.log('💦💦💦 success 👉👌 💦💦💦');
+    console.log('💦💦💦 👉 success 👌 💦💦💦');
     console.timeEnd('⏳⏳ total time ⏳⏳')
   }
   catch(err) {
