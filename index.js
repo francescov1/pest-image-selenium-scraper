@@ -18,24 +18,17 @@ AWS.config.update({
 
 const s3 = new AWS.S3({ apiVersion: config.aws.version })
 
-/* websites
-- https://www.insectimages.org/browse/taxthumb.cfm?order=39
-- https://www.insectimages.org/search/action.cfm?q=flea+beetle
-- https://www.inaturalist.org/
+async function runScraper(bugName, location, numImages) {
 
-- ground beetles (Carabidae): https://www.inaturalist.org/taxa/49567-Carabidae/browse_photos
-*/
+  console.log(`scraping for ${numImages} images of ${bugName} in ${location}...`)
+  console.time('⏳⏳ total time ⏳⏳');
 
-async function runScraper(url, numImages) {
-  if (!url)
-    url = 'https://www.inaturalist.org/taxa/49567-Carabidae/browse_photos'
-
-  console.log(`scraping ${url} for images...`)
   const screen = {
     width: 640,
     height: 480
   };
 
+  const url = 'https://www.inaturalist.org/taxa/1-Animalia'
   let driver = await new Builder()
     .forBrowser('chrome')
     .setChromeOptions(new chrome.Options().headless().windowSize(screen))
@@ -44,28 +37,63 @@ async function runScraper(url, numImages) {
   try {
     await driver.get(url);
 
-    let numPhotos = 0;
+    // set location
+    let locationNameFound;
+    if (location) {
+      const locationButton = await driver.findElement(By.className('PlaceChooserPopoverTrigger RecordChooserPopoverTrigger  undefined'));
+      await locationButton.click()
+      const locationForm = await driver.findElement(By.xpath("//*[@class='form-group']/input"))
+      await locationForm.sendKeys(location)
+      await driver.sleep(1500)
+
+      const dropdown = await driver.findElement(By.className('list-unstyled'))
+      const options = await dropdown.findElements(By.className("media"));
+      await options[0].click()
+
+      locationNameFound = await driver.findElement(By.className('PlaceChooserPopoverTrigger RecordChooserPopoverTrigger  undefined')).getText();
+      console.log('location chosen: ' + locationNameFound)
+    }
+
+    // find bug page
+    const search = await driver.findElement(By.className('form-control input-sm ui-autocomplete-input'))
+    await search.sendKeys(bugName);
+    await driver.sleep(2000)
+    const searchResults = await driver.wait(until.elementsLocated(By.className('ac-result taxon ui-menu-item')))
+    const topResult = searchResults[0]
+    const text = await topResult.getText()
+    const bugNameFound = text.split('\n')[0]
+    console.log('species chosen: ' + bugNameFound)
+
+    const bugLink = await topResult.findElement(By.tagName('a')).getAttribute('href')
+    await driver.get(bugLink);
+
+    const viewMore = await driver.wait(until.elementLocated(By.className('viewmore')))
+    const viewMoreLink = await viewMore.findElement(By.tagName('a')).getAttribute('href')
+    await driver.get(viewMoreLink)
+
+    // find # of photos requested
+    let currentImages = 0;
     var bar = new ProgressBar('loading photos [:bar] :percent :elapsed', { total: numImages, width: 50 });
 
     let photos;
-    while(numPhotos < numImages) {
+    while(currentImages < numImages) {
       await driver.executeScript('window.scrollTo(0,100000);');
       await driver.sleep(3000)
       photos = await driver.findElements(By.className('CoverImage low undefined loaded'));
 
-      if (photos.length === numPhotos) {
+      if (photos.length === currentImages) {
         await driver.executeScript('window.scrollBy(0,-1000);');
         await driver.sleep(1000)
       }
 
-      numPhotos = photos.length
-      bar.tick(numPhotos - bar.curr)
+      currentImages = photos.length
+      bar.tick(currentImages - bar.curr)
     }
 
-    console.log(`image loading complete - ${photos.length} photos`)
+    console.log(`image loading complete - ${numImages} photos`)
 
     let urls = [];
-    for (let i=0; i < photos.length; i++) {
+    for (let i=0; i < numImages; i++) {
       const photo = photos[i];
       const urlObj = await photo.getCssValue('background-image')
       urls.push(urlObj.split(`"`)[1]);
@@ -76,8 +104,10 @@ async function runScraper(url, numImages) {
     console.log('photos downloaded successfully')
 
     // send to s3
-    await uploadToS3(imgDatas);
-    console.log('💦💦💦 Success 👉👌 💦💦💦');
+    await uploadToS3(imgDatas, bugNameFound, locationNameFound);
+    console.log('💦💦💦 success 👉👌 💦💦💦');
+    console.timeEnd('⏳⏳ total time ⏳⏳')
+
   }
   catch(err) {
     console.error(err)
@@ -104,13 +134,13 @@ function getImageData(urls) {
   });
 }
 
-function uploadToS3(imgDatas) {
+function uploadToS3(imgDatas, bugName, locationName) {
   var bar = new ProgressBar(`uploading ${imgDatas.length} photos to AWS S3... [:bar] :percent :elapsed`, { total: imgDatas.length, width: 50 });
 
   return Promise.map(imgDatas, (imgData, i, length) => {
     return s3.putObject({
       Bucket: config.aws.s3_bucket_name,
-      Key: `carabidae/${randomstring.generate(5)}.jpg`,
+      Key: `${bugName}/${locationName || 'no location'}/${randomstring.generate(5)}.jpg`,
       Body: imgData
     }).promise()
     .then(result => {
@@ -123,6 +153,6 @@ function uploadToS3(imgDatas) {
 }
 
 prompt.start();
-prompt.get(['url', 'numImages'], function (err, result) {
-  runScraper(result.url, Number(result.numImages))
+prompt.get(['bugName', 'location', 'numImages'], function (err, result) {
+  runScraper(result.bugName, result.location, Number(result.numImages))
 });
